@@ -1,5 +1,6 @@
 ﻿using System.Runtime.InteropServices;
-namespace DexHollower.Dex;
+
+namespace DexHollower.DexFile;
 
 /// <summary>
 /// Represents the fixed-size header of a code_item in a DEX file.

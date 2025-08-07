@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace DexHollower.Dex;
+namespace DexHollower.DexFile;
 
 /// <summary>
 /// Represents the header of a DEX file.

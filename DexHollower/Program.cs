@@ -1,108 +1,42 @@
-﻿using DexHollower.Dex;
+﻿using CommandLine;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics.CodeAnalysis;
-using System.Text;
+
+namespace DexHollower;
 
 public class Program
 {
-    private struct CustomCodeItem
+    
+
+    [Verb("show", HelpText = "Show DEX file information")]
+    public struct ShowOptions
     {
-        public uint debug_info_off;
-        public uint insns_size;
-        public ushort[] insns;
+        [Option('i', "input", Required = true, HelpText = "Path to the DEX file to be processed.")]
+        public string DexFilePath { get; set; }
     }
 
-    [RequiresDynamicCode("Calls DexHollower.Dex.DexFile(string filePath)")]
-    public static void Main(string[] args)
+    [RequiresDynamicCode("Calls DexHollower.DexFile.DexFile.DexFile(String)")]
+    private static void ShowDexInfo(ShowOptions opt)
     {
-        using ILoggerFactory loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
-        ILogger<Program> logger = loggerFactory.CreateLogger<Program>();
+        Console.WriteLine(new DexFile.DexFile(opt.DexFilePath));
+    }
 
-        if (args.Length == 0)
+    [RequiresDynamicCode("")]
+    public static int Main(string[] args)
+    {
+        try
         {
-            logger.LogError("Usage: DexHollower.exe <path to dex> [class name] [method name] [method shorty]");
-            return;
+            return Parser.Default.ParseArguments<ShowOptions, Hollower.HollowOptions>(args)
+                .MapResult(
+                (ShowOptions opt) => { ShowDexInfo(opt); return 0; },
+                (Hollower.HollowOptions opts) => Hollower.Run(opts),
+                error => -1);
         }
-
-        var dexFile = new DexFile(args[0]);
-        logger.LogInformation("DEX loaded successfully!");
-        Console.WriteLine(dexFile);
-        if (args.Length < 4)
-            return;
-
-        int iMethodIndex = -1;
-        for (int i = 0; i < dexFile.MethodIds.Count; i++)
+        catch (Exception ex)
         {
-            var methodId = dexFile.MethodIds[i];
-            var protoId = dexFile.ProtoIds[methodId.proto_idx];
-
-            string className = dexFile.TypeNames[methodId.class_idx];
-            string methodName = dexFile.StringIds[(int)methodId.name_idx];
-            string shorty = dexFile.StringIds[(int)protoId.shorty_idx];
-
-            logger.LogDebug("Iterate method {Index}: {ClassName}.{MethodName}(){Shorty}", i, className, methodName, shorty);
-
-            if (className == args[1] && methodName == args[2] && shorty == args[3])
-            {
-                iMethodIndex = i;
-                break;
-            }
+            Console.WriteLine("An unexpected error occurred:");
+            Console.WriteLine(ex);
+            return -1;
         }
-
-        if (iMethodIndex == -1)
-        {
-            logger.LogError("Method {ClassName}.{MethodName}(){Shorty} not found!", args[1], args[2], args[3]);
-            return;
-        }
-
-        var methodIndex = (uint)iMethodIndex;
-
-        DexCodeItem? code = dexFile.GetCodeForMethod(methodIndex);
-        if (code == null)
-        {
-            logger.LogWarning("Method found, but it has no code (it might be abstract or native).");
-            return;
-        }
-
-        logger.LogInformation("Found code for method index {MethodIndex}. Instruction count: {InstructionCount}", methodIndex, code.Instructions.Length);
-
-        var customCodeItem = new CustomCodeItem
-        {
-            debug_info_off = code.Header.debug_info_off,
-            insns_size = code.Header.insns_size,
-            insns = code.Instructions
-        };
-
-        byte[] customCodeItemBytes;
-        using (var memoryStream = new MemoryStream())
-        {
-            using (var writer = new BinaryWriter(memoryStream))
-            {
-                writer.Write(customCodeItem.debug_info_off);
-                writer.Write(customCodeItem.insns_size);
-
-                var insnsBytes = new byte[customCodeItem.insns.Length * sizeof(ushort)];
-                Buffer.BlockCopy(customCodeItem.insns, 0, insnsBytes, 0, insnsBytes.Length);
-                writer.Write(insnsBytes);
-            }
-            customCodeItemBytes = memoryStream.ToArray();
-        }
-        File.WriteAllBytes("code_item.bin", customCodeItemBytes);
-        logger.LogInformation("Successfully wrote {ByteCount} bytes to code_item.bin", customCodeItemBytes.Length);
-
-        var insnsDump = new StringBuilder();
-        for (int i = 0; i < code.Instructions.Length; i++)
-        {
-            insnsDump
-                .Append(code.Instructions[i].ToString("X4"))    
-                .Append(' ');
-            code.Instructions[i] = 0x0000; // Replace with NOP (0x0000)
-        }
-        logger.LogInformation("Instructions dump: {InsnsDump}", insnsDump.ToString());
-
-        dexFile.SetCodeForMethod(methodIndex, code);
-
-        dexFile.Save("modified_classes.dex");
-        logger.LogInformation("Modified DEX file saved successfully!");
     }
 }
